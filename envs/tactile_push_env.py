@@ -169,7 +169,7 @@ class TactilePushEnv(RedMaxTorchEnv):
         self.tactile_force_his = []
         self.tactile_obs_his = []
 
-        return obs
+        return (obs), {}
     
     def step(self, u):
         if not self.use_torch:
@@ -229,7 +229,7 @@ class TactilePushEnv(RedMaxTorchEnv):
 
         # print(obs)
 
-        return obs, reward, False, info
+        return obs, reward, False, False, info
     
     def visualize_tactile(self, tactile_array):
         resolution = 20

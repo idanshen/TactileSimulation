@@ -50,7 +50,8 @@ class RedMaxEnv(gym.Env):
             
         self.record_folder = './record/'
         self.record_idx = 0
-        self.seed()
+        self.record_episode_idx = 0
+        self.seed(seed = seed)
         
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -60,7 +61,7 @@ class RedMaxEnv(gym.Env):
         '''
         follow the formula in http://planning.cs.uiuc.edu/node198.html
         '''
-        ran = self.np_random.rand(3)
+        ran = np.random.rand(3)
         r1, r2, r3 = ran[0], ran[1], ran[2]
         pi2 = 2 * np.pi
         r1_1 = np.sqrt(1.0 - r1)

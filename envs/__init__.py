@@ -17,6 +17,11 @@ register(
     entry_point='envs.dclaw_rotate_env:DClawRotateEnv',
     max_episode_steps=200
 )
+register(
+    id="TactileReorientation-v0",
+    entry_point='envs.cube_reoreientation_env:DClawReorientationEnv',
+    max_episode_steps=200
+)
 
 register(
     id='Insertion-v3',

@@ -8,16 +8,13 @@ import envs
 import gym
 
 if __name__ == '__main__':
-    env = gym.make('TactileRotation-v1', use_torch = False, observation_type = "tactile", seed = 0)
+    env = gym.make('TactileReorientation-v0', observation_type = "no_tactile", seed = 0)
 
     action_space = env.action_space
 
     env.reset()
     for i in range(1000):
         action = action_space.sample()
-        obs, reward, done, _ = env.step(action)
-        if done:
+        obs, reward, done, _, _ = env.step(action)
+        if i%100 == 0:
             env.render(mode = 'once')
-            print('reset')
-            obs = env.reset()
-

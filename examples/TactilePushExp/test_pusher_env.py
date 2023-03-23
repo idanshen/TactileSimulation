@@ -18,7 +18,7 @@ if __name__ == '__main__':
         action = action_space.sample()
         action[0] = 1.
         action[1] = action[2] = 0.
-        obs, reward, done, _ = env.step(action)
+        obs, reward, done, truncated, _ = env.step(action)
         if done:
             env.render(mode = 'loop')
             obs = env.reset()

@@ -18,11 +18,13 @@ from utils.renderer import SimRenderer
 def convert_observation_to_space(observation):
     if hasattr(observation, 'shape'):
         if len(observation.shape) == 1:
-            low = np.full(observation.shape, -float('inf'), dtype=np.float32)
-            high = np.full(observation.shape, float('inf'), dtype=np.float32)
+            low = np.full(observation.shape, -float('inf'), dtype=np.float64)
+            high = np.full(observation.shape, float('inf'), dtype=np.float64)
             space = spaces.Box(low, high, dtype=np.float32)
         elif len(observation.shape) == 3:
-            space = spaces.Box(low = -np.inf, high = np.inf, shape = observation.shape, dtype = np.float32)
+            space = spaces.Box(low = -np.inf, high = np.inf, shape = observation.shape, dtype = np.float64)
+    elif type(observation) is tuple:
+        space = spaces.Tuple(tuple(convert_observation_to_space(o) for o in observation))
     else:
         return None
     

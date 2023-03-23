@@ -163,12 +163,12 @@ class DClawRotateEnv(RedMaxTorchEnv):
 
     def reset(self):
         q_init = self.q_init.copy() # (10, ), the last DoF is for the cap rotation angle
-        q_init[0:9] = q_init[0:9] + self.np_random.randn(9) * 0.05 # the first 9 Dof are the joint angles of dclaw
+        q_init[0:9] = q_init[0:9] + np.random.randn(9) * 0.05 # the first 9 Dof are the joint angles of dclaw
         qdot_init = np.zeros(10)
 
-        damping = self.np_random.uniform(low = 0.01, high = 0.7)
-        radius = self.np_random.uniform(low=0.02, high=0.08)
-        dx, dy = self.np_random.uniform(low=-0.02, high=0.02, size=2)
+        damping = np.random.uniform(low = 0.01, high = 0.7)
+        radius = np.random.uniform(low=0.02, high=0.08)
+        dx, dy = np.random.uniform(low=-0.02, high=0.02, size=2)
 
         self.sim.update_joint_damping("cap", damping)
 
@@ -219,7 +219,7 @@ class DClawRotateEnv(RedMaxTorchEnv):
         if done:
             info['reward_energy'] = self.energy_usage
 
-        return self._get_obs(), reward, done, info
+        return self._get_obs(), reward, done, False, info
 
     def visualize_tactile(self, tactile_array):
         resolution = 40
