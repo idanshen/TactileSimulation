@@ -1,11 +1,9 @@
 import os
-from re import I
 import sys
 
 project_base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 sys.path.append(project_base_dir)
 
-import numpy as np
 from TactileSimulation.envs.redmax_torch_env import RedMaxTorchEnv
 from TactileSimulation.utils.common import *
 from scipy.spatial.transform import Rotation
@@ -208,27 +206,41 @@ class DClawReorientationEnv(RedMaxTorchEnv):
         #     print(f'cap angle:{cap_angle}, target:{max_rotation_angle}   done:{done}')
         # return reward, done, success
 
-    def compute_reward(self, reset_buf, reset_goal_buf, progress_buf,
-                       successes, consecutive_successes, max_episode_length: float,
-                       object_pos, object_rot, target_pos, target_rot,
-                       actions, max_consecutive_successes: int,
-                       av_factor: float, ignore_z_rot: bool,
+    def compute_reward(self, reset_goal_buf,
+                       progress_buf,
+                       successes,
+                       max_episode_length: float,
+                       object_pos,
+                       target_pos,
+                       actions,
+                       max_consecutive_successes: int,
                        fingertip_pos,
-                       object_linvel, object_angvel,
-                       raw_actions_from_policy, dof_vel, quat_diff,
-                       dof_torque, add_dof_vel_penalty: bool,
-                       relative_control: bool, dist_reward_scale: float,
-                       rot_reward_scale: float, rot_eps: float,
-                       reach_goal_bonus: float, fall_dist: float,
-                       fall_penalty: float, success_tolerance: float,
-                       no_pos_reward: bool, time_due_penalty: bool,
-                       ftip_reward_scale: float, ftipRewardMaxOnly: bool,
-                       timeout_not_done: bool, energy_scale: float,
-                       max_dof_vel: float, dof_vel_rew_scale: float, dof_vel_thresh: float,
-                       obj_lin_vel_thresh: float, obj_ang_vel_thresh: float, action_norm_thresh: float,
-                       penalize_tb_contact: bool, table_cf, tb_cf_scale: float,
-                       clip_energy_reward: bool, energy_upper_bound: float,
-                       tip_height_penalty: float, tip_high_reset: bool,
+                       object_linvel,
+                       object_angvel,
+                       dof_vel,
+                       quat_diff,
+                       dof_torque,
+                       relative_control: bool,
+                       rot_reward_scale: float = 1.0,
+                       rot_eps: float = 0.1,
+                       reach_goal_bonus: float = 800,
+                       fall_dist: float = 0.24,
+                       fall_penalty: float = -100,
+                       success_tolerance: float = 0.4,
+                       time_due_penalty: bool = True,
+                       ftip_reward_scale: float = -1.0,
+                       ftipRewardMaxOnly: bool = False,
+                       timeout_not_done: bool = False,
+                       energy_scale: float = 20,
+                       dof_vel_thresh: float = 0.25,
+                       obj_lin_vel_thresh: float = 0.04,
+                       obj_ang_vel_thresh: float = 0.5,
+                       action_norm_thresh: float = 1.0,
+                       penalize_tb_contact: bool = False,
+                       table_cf = 1.0,
+                       tb_cf_scale: float = 0.5,
+                       clip_energy_reward: bool = True,
+                       energy_upper_bound: float = 10,
                        ):
         # Distance from the hand to the object
         goal_dist = torch.norm(object_pos - target_pos, p=2, dim=-1)
@@ -277,40 +289,24 @@ class DClawReorientationEnv(RedMaxTorchEnv):
 
         fall_envs = goal_dist >= fall_dist
         dones = torch.logical_or(goal_reach, fall_envs)
-        resets = torch.where(fall_envs, torch.ones_like(reset_buf), reset_buf)
         successes = successes + goal_resets
 
-        # if tip_height_penalty < 0:
-        #     fingertip_pos_reshaped = fingertip_pos.view(num_envs, -1, 3)
-        #     high_tips = fingertip_pos_reshaped[:, :, 2] > 0.16
-        #     high_tip_envs = high_tips.sum(-1)
-        #     tip_penalty = tip_height_penalty * high_tip_envs.float()
-        #     reward_terms['tip_height_reward'] = tip_penalty
-        #     if tip_high_reset:
-        #         need_reset = high_tip_envs > 0
-        #         dones = torch.logical_or(dones, need_reset)
-        #         resets = torch.where(need_reset, torch.ones_like(resets), resets)
         reward = torch.sum(torch.stack(list(reward_terms.values())), dim=0)
+
         # Success bonus: orientation is within `success_tolerance` of goal orientation
         reward = torch.where(goal_reach, reward + reach_goal_bonus, reward)
 
         # Fall penalty: distance to the goal is larger than a threashold
         reward = torch.where(fall_envs, reward + fall_penalty, reward)
 
-        # Check env termination conditions, including maximum success number
-
-        time_due_envs = progress_buf >= max_episode_length - 1
-        resets = torch.where(time_due_envs, torch.ones_like(resets), resets)
+        truncated = progress_buf >= max_episode_length - 1
         if not timeout_not_done:
-            dones = torch.logical_or(dones, time_due_envs)
+            dones = torch.logical_or(dones, truncated)
+        # Time out penalty: distance to the goal is larger than a threashold
         if max_consecutive_successes > 0 and time_due_penalty:
-            reward = torch.where(time_due_envs, reward + 0.5 * fall_penalty, reward)
-        truncated = time_due_envs
+            reward = torch.where(truncated, reward + 0.5 * fall_penalty, reward)
 
-        num_resets = torch.sum(resets)
-        finished_cons_successes = torch.sum(successes * resets.float())
-
-        return reward, dones.int(), truncated, {"successes": successes}
+        return reward, dones.int(), truncated, successes
 
     def reset(self):
         if self.random_initialization:  # random initial cube initial orientation
