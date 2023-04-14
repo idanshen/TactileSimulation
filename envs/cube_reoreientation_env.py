@@ -4,10 +4,10 @@ import sys
 project_base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 sys.path.append(project_base_dir)
 
-from TactileSimulation.envs.redmax_torch_env import RedMaxTorchEnv
-from TactileSimulation.utils.common import *
+from envs.redmax_torch_env import RedMaxTorchEnv
+from utils.common import *
 from scipy.spatial.transform import Rotation
-from TactileSimulation.utils import math
+from utils import math
 from gym import spaces
 import torch
 import cv2
@@ -34,6 +34,7 @@ class DClawReorientationEnv(RedMaxTorchEnv):
         self.use_torch = use_torch
         self.verbose = verbose
         self.render_tactile = render_tactile
+        self._elapsed_steps = None
 
         self.tactile_rows = 20
         self.tactile_cols = 20
@@ -139,87 +140,54 @@ class DClawReorientationEnv(RedMaxTorchEnv):
 
         return state
 
-    def _get_reward(self, action):
-        return 0, False, False
-        # reward, dones, resets, goal_resets, progress_buf, successes, \
-        # cons_successes, abs_rot_dist, reward_terms, time_due_envs = self.compute_reward(
-        #     reset_buf, reset_goal_buf, progress_buf,
-        #     successes, consecutive_successes, max_episode_length,
-        #     object_pos, object_rot, target_pos, target_rot,
-        #     actions, max_consecutive_successes,
-        #     av_factor, ignore_z_rot,
-        #     fingertip_pos,
-        #     object_linvel, object_angvel,
-        #     raw_actions_from_policy, dof_vel, quat_diff,
-        #     dof_torque, add_dof_vel_penalty,
-        #     relative_control, dist_reward_scale,
-        #     rot_reward_scale, rot_eps,
-        #     reach_goal_bonus, fall_dist,
-        #     fall_penalty, success_tolerance,
-        #     no_pos_reward, time_due_penalty,
-        #     ftip_reward_scale, ftipRewardMaxOnly,
-        #     timeout_not_done, energy_scale,
-        #     max_dof_vel, dof_vel_rew_scale, dof_vel_thresh,
-        #     obj_lin_vel_thresh, obj_ang_vel_thresh, action_norm_thresh,
-        #     penalize_tb_contact, table_cf, tb_cf_scale,
-        #     clip_energy_reward, energy_upper_bound,
-        #     tip_height_penalty, tip_high_reset, )
+    def _get_reward(self):
+        # return 0, False, False
+        torques = self.sim.get_joint_torques()
+        # ground_force = self.sim.get_ground_force("box")[3:]
+        q, qdot = self.sim.get_q().copy(), self.sim.get_qdot().copy()
+        hand_dofs = q[:9].copy()  # joint angles of the hand
+        hand_vel_dofs = qdot[:9].copy()
+        # scaled_dof_pos = math.unscale(q[:9], self.joint_limit_lower, self.joint_limit_upper) # TODO: Necessary?
 
-        # q, qdot = self.sim.get_q().copy(), self.sim.get_qdot().copy()
-        # hand_dofs = q[:9].copy()  # joint angles of the hand
-        #
-        # variables = self.sim.get_variables().copy()  # the variables contains the positions of three finger tips [0:3], [3:6], [6:9]
-        # fingertip_pos_world = np.array(variables[:9])
-        #
-        # cap_angle = q[-1]
-        #
-        # tactile_force = self.tactile_force_buf.cpu().numpy()
-        # tactile_force_grid = np.linalg.norm(tactile_force, axis=-1)
-        # finger_tactile_force = tactile_force_grid.sum(-1).sum(-1)
-        # not_in_contact = finger_tactile_force < 1.0
-        #
-        # reward = 0.
-        #
-        # reward -= not_in_contact.sum() * 0.5
-        #
-        # max_rotation_angle = np.pi / 4
-        # rotation_reward = -self.rot_coef * (min(cap_angle - max_rotation_angle, 0)) ** 2
-        # reward += rotation_reward
-        #
-        # action_penalty = -self.power_coef * np.sum(action ** 2)
-        # reward += action_penalty
-        #
-        # done = False
-        # success = False
-        #
-        # if np.any(fingertip_pos_world[2::3] > self.cap_top_surface_z):
-        #     done = True
-        #     reward += -50
-        #     if self.verbose:
-        #         print(f'fingertip pos:{fingertip_pos_world[2::3]}')
-        #
-        # if cap_angle > max_rotation_angle:
-        #     reward += 50
-        #     success = True
-        #     done = True
-        # if self.verbose:
-        #     print(f'cap angle:{cap_angle}, target:{max_rotation_angle}   done:{done}')
-        # return reward, done, success
+        variables = self.sim.get_variables().copy()  # the variables contains the positions of three finger tips [0:3], [3:6], [6:9]
+        fingertip_pos_world = variables[3:12]
+        cube_pos_world = variables[:3]
+        cube_rotvec = q[-3:].copy()
+        cube_quat = np.array(Rotation.from_rotvec(cube_rotvec).as_quat())
+        cube_lin_vel = qdot[-6:-3].copy()
+        cube_ang_vel = qdot[-3:].copy()
 
-    def compute_reward(self, reset_goal_buf,
-                       progress_buf,
-                       successes,
+        quat_diff = math.quat_mul(cube_quat, math.quat_conjugate(self.goal_quat))
+        self._elapsed_steps += 1
+        reward, dones, truncated, successes = self.compute_reward(
+            curr_step=self._elapsed_steps,
+            max_episode_length=200,
+            object_pos=cube_pos_world,
+            target_pos=np.array([0.0, 0.0, 0.025]),
+            actions=self.actions,
+            fingertip_pos=fingertip_pos_world,
+            object_linvel=cube_lin_vel,
+            object_angvel=cube_ang_vel,
+            dof_vel=hand_vel_dofs,
+            quat_diff=quat_diff,
+            dof_torque=torques,
+            table_cf=None,
+            relative_control=self.relative_control)
+        return reward, dones, truncated, successes
+
+    def compute_reward(self,
+                       curr_step,
                        max_episode_length: float,
                        object_pos,
                        target_pos,
                        actions,
-                       max_consecutive_successes: int,
                        fingertip_pos,
                        object_linvel,
                        object_angvel,
                        dof_vel,
                        quat_diff,
                        dof_torque,
+                       table_cf,
                        relative_control: bool,
                        rot_reward_scale: float = 1.0,
                        rot_eps: float = 0.1,
@@ -237,76 +205,78 @@ class DClawReorientationEnv(RedMaxTorchEnv):
                        obj_ang_vel_thresh: float = 0.5,
                        action_norm_thresh: float = 1.0,
                        penalize_tb_contact: bool = False,
-                       table_cf = 1.0,
                        tb_cf_scale: float = 0.5,
                        clip_energy_reward: bool = True,
                        energy_upper_bound: float = 10,
                        ):
+        # return 0, False, False, False
+
         # Distance from the hand to the object
-        goal_dist = torch.norm(object_pos - target_pos, p=2, dim=-1)
-        num_envs = object_pos.shape[0]
+        goal_dist = np.linalg.norm(object_pos - target_pos, axis=-1)
 
         reward_terms = dict()
         if ftip_reward_scale is not None and ftip_reward_scale < 0:
-            ftip_diff = (fingertip_pos.view(num_envs, -1, 3) - object_pos[:, None, :])
-            ftip_dist = torch.linalg.norm(ftip_diff, dim=-1).view(num_envs, -1)
+            ftip_diff = (fingertip_pos.reshape(3,3) - object_pos[None, :])
+            ftip_dist = np.linalg.norm(ftip_diff, axis=-1)
             if ftipRewardMaxOnly:
-                ftip_dist_max = ftip_dist.max(dim=-1)[0]
+                ftip_dist_max = ftip_dist.max(axis=-1)
                 ftip_reward = ftip_dist_max * ftip_reward_scale
             else:
-                ftip_dist_mean = ftip_dist.mean(dim=-1)
+                ftip_dist_mean = ftip_dist.mean(axis=-1)
                 ftip_reward = ftip_dist_mean * ftip_reward_scale
             reward_terms['ftip_reward'] = ftip_reward
 
-        object_linvel_norm = torch.linalg.norm(object_linvel, dim=-1)
-        object_angvel_norm = torch.linalg.norm(object_angvel, dim=-1)
+        object_linvel_norm = np.linalg.norm(object_linvel, axis=-1)
+        object_angvel_norm = np.linalg.norm(object_angvel, axis=-1)
 
-        rot_dist = 2.0 * torch.asin(torch.clamp(torch.norm(quat_diff[:, 0:3], p=2, dim=-1), max=1.0))
-        abs_rot_dist = torch.abs(rot_dist)
+        rot_dist = 2.0 * np.arcsin(np.clip(np.linalg.norm(quat_diff[0:3], axis=-1), a_min=None, a_max=1.0))
+        abs_rot_dist = np.abs(rot_dist)
 
         rot_rew = 1.0 / (abs_rot_dist + rot_eps) * rot_reward_scale
         reward_terms['rot_reward'] = rot_rew
-        action_norm = torch.linalg.norm(actions, dim=-1)
-        energy_cost = torch.abs(dof_vel * dof_torque).sum(dim=-1)
+        action_norm = np.linalg.norm(actions, axis=-1)
+        energy_cost = np.abs(dof_vel * np.array(dof_torque).squeeze()).sum(axis=-1)
         if clip_energy_reward:
-            energy_cost = torch.clamp(energy_cost, max=energy_upper_bound)
+            energy_cost = np.clip(energy_cost, a_min=None, a_max=energy_upper_bound)
         reward_terms['energy_reward'] = -energy_cost * energy_scale
 
-        if penalize_tb_contact:
-            in_contact = torch.abs(table_cf).sum(-1) > 0.2
-            reward_terms['tb_contact_reward'] = -in_contact.float() * tb_cf_scale
+        # if penalize_tb_contact:
+        #     in_contact = np.abs(table_cf).sum(-1) > 0.2
+        #     reward_terms['tb_contact_reward'] = -in_contact.float() * tb_cf_scale
 
-        dof_vel_norm = torch.linalg.norm(dof_vel, dim=-1)
+        dof_vel_norm = np.linalg.norm(dof_vel, axis=-1)
 
         goal_reach = (abs_rot_dist <= success_tolerance) & (dof_vel_norm <= dof_vel_thresh) \
                      & (object_linvel_norm <= obj_lin_vel_thresh) & (object_angvel_norm <= obj_ang_vel_thresh)
-        if penalize_tb_contact:
-            goal_reach = goal_reach & (torch.abs(table_cf).sum(-1) < 0.2)
+        # if penalize_tb_contact:
+        #     goal_reach = goal_reach & (torch.abs(table_cf).sum(-1) < 0.2)
 
         if relative_control:
             goal_reach = goal_reach & (action_norm <= action_norm_thresh)
-        goal_resets = torch.where(goal_reach, torch.ones_like(reset_goal_buf), reset_goal_buf)
+        goal_resets = goal_reach #torch.where(goal_reach, torch.ones_like(reset_goal_buf), reset_goal_buf)
 
         fall_envs = goal_dist >= fall_dist
-        dones = torch.logical_or(goal_reach, fall_envs)
-        successes = successes + goal_resets
+        dones = np.logical_or(goal_reach, fall_envs)
+        successes = goal_resets
 
-        reward = torch.sum(torch.stack(list(reward_terms.values())), dim=0)
+        reward = np.sum(np.stack(list(reward_terms.values())), axis=0)
 
         # Success bonus: orientation is within `success_tolerance` of goal orientation
-        reward = torch.where(goal_reach, reward + reach_goal_bonus, reward)
+        if successes:
+            reward = reward + reach_goal_bonus
 
         # Fall penalty: distance to the goal is larger than a threashold
-        reward = torch.where(fall_envs, reward + fall_penalty, reward)
+        if fall_envs:
+            reward = reward + fall_penalty
 
-        truncated = progress_buf >= max_episode_length - 1
+        truncated = curr_step >= max_episode_length - 1
         if not timeout_not_done:
-            dones = torch.logical_or(dones, truncated)
+            dones = np.logical_or(dones, truncated)
         # Time out penalty: distance to the goal is larger than a threashold
-        if max_consecutive_successes > 0 and time_due_penalty:
-            reward = torch.where(truncated, reward + 0.5 * fall_penalty, reward)
+        if time_due_penalty and truncated:
+            reward = reward + 0.5 * fall_penalty
 
-        return reward, dones.int(), truncated, successes
+        return reward, dones, truncated, successes
 
     def reset(self):
         if self.random_initialization:  # random initial cube initial orientation
@@ -335,7 +305,7 @@ class DClawReorientationEnv(RedMaxTorchEnv):
 
         self.tactile_force_his = []
         self.tactile_obs_his = []
-
+        self._elapsed_steps = 0
         return self._get_obs()
 
     def step(self, u):
@@ -358,7 +328,7 @@ class DClawReorientationEnv(RedMaxTorchEnv):
 
         self.sim.forward(self.frame_skip, verbose=False, test_derivatives=False)
 
-        reward, done, success = self._get_reward(policy_out)
+        reward, done, truncated, success = self._get_reward()
 
         # append tactile his
         if self.render_tactile:

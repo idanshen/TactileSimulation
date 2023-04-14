@@ -153,11 +153,11 @@
     </sensor>
 
     <variable>
-        <endeffector joint="box" pos="0 0 0" radius="0.1"/>
+        <endeffector joint="box" pos="0 0 0.0" radius="0.0"/>
         <!-- <endeffector joint="box" pos="3 0 3" radius="0.2"/> -->
-        <endeffector joint="one3_jnt" pos="0 0.084 0." radius="0.3"/>
-        <endeffector joint="two3_jnt" pos="0 0.084 0." radius="0.3"/>
-        <endeffector joint="three3_jnt" pos="0 0.084 0." radius="0.3"/>
+        <endeffector joint="one3_jnt" pos="0 0.084 0." radius="0.0"/>
+        <endeffector joint="two3_jnt" pos="0 0.084 0." radius="0.0"/>
+        <endeffector joint="three3_jnt" pos="0 0.084 0." radius="0.0"/>
 	</variable>
 
     <virtual>
